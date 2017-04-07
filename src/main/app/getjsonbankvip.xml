@@ -1,14 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:json="http://www.mulesoft.org/schema/mule/json" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
 	xmlns:spring="http://www.springframework.org/schema/beans" 
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
 http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
 http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
-http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
     <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
     <http:request-config name="HTTP_Request_Configuration" protocol="HTTPS" port="443" doc:name="HTTP Request Configuration"/>
+    
     <flow name="getjsonbankvip:listener-load">
         <http:listener config-ref="HTTP_Listener_Configuration" path="/load" allowedMethods="POST" doc:name="HTTP"/>
         <set-variable variableName="id" value="#[java.util.UUID.randomUUID().toString()]" doc:name="+id"/>
@@ -16,11 +19,33 @@ http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/m
 
         <logger level="INFO" doc:name="Logger" message="#['ID: ' + flowVars.id +' Mensaje entrante: ' + payload]"/>
         <flow-ref name="getjsonbankvip:getJSON" doc:name="getjsonbankvip:getJSON"/>
+        <flow-ref name="getjsonbankvip:selectVips" doc:name="getjsonbankvip:selectVips"/>
+        <flow-ref name="getjsonbankvip:saveClients" doc:name="getjsonbankvip:saveClients"/>
     </flow>
     <sub-flow name="getjsonbankvip:getJSON">
-        <set-variable variableName="host" value="#[new URL(payload).getHost()]" doc:name="host"/>
-        <set-variable variableName="path" value="#[new URL(payload).getPath()]" doc:name="path"/>
+        <set-variable variableName="host" value="#[new URL(payload).getHost()]" doc:name="+host"/>
+        <set-variable variableName="path" value="#[new URL(payload).getPath()]" doc:name="+path"/>
         <http:request config-ref="HTTP_Request_Configuration" path="#[flowVars.path]" method="GET" host="#[flowVars.host]" doc:name="HTTPS"/>
+        <json:json-to-object-transformer returnClass="java.util.ArrayList" doc:name="JSON to Object"/>
+    </sub-flow>
+    <sub-flow name="getjsonbankvip:selectVips">
         <logger message="#['JSON Received Successful']" level="INFO" doc:name="Logger"/>
+        <set-variable variableName="cust_vips" value="#[new ArrayList()]" doc:name="+cust_vips"/>
+        <foreach collection="#[payload]" doc:name="For Each">
+            <choice doc:name="Choice">
+                <when expression="Float.parseFloat(payload.account_balance.replace(&quot;$&quot;,&quot;&quot;)) &gt; 750000">
+                    <expression-component doc:name="Expression"><![CDATA[flowVars.cust_vips.add(payload)]]></expression-component>
+                </when>
+                <otherwise>
+                    <logger message="nope" level="DEBUG" doc:name="Logger"/>
+                </otherwise>
+            </choice>
+        </foreach>
+        <set-payload value="#[flowVars.cust_vips]" doc:name="Set Payload"/>
+        <json:object-to-json-transformer doc:name="Object to JSON"/>
+    </sub-flow>
+    <sub-flow name="getjsonbankvip:saveClients">
+        <file:outbound-endpoint path="C:\TEMP\Vips" outputPattern="clipvip.json" responseTimeout="10000" doc:name="File"/>
+        <logger level="INFO" doc:name="Logger"/>
     </sub-flow>
 </mule>
